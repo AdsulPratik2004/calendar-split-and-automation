@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+import json # <--- IMPORTED JSON
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -151,22 +152,49 @@ async def process_approved_posts(payload: CalendarPayload):
                     log.warning(f"Could not parse scheduled_datetime: {scheduled_str} for item {post_id}. Error: {e}")
             else:
                 log.warning(f"Missing scheduled_datetime for item {post_id}")
+            # --- End of new logic ---
 
+            # --- FIX: Handle image_link (string) vs. carousel (list) ---
+            image_link_to_save = item.get("image_link") # Get the image_link field
+            
+            # Check if image_link is missing, empty, or not a string
+            if not image_link_to_save or not isinstance(image_link_to_save, str):
+                carousel_links = item.get("carousel")
+                # If image_link is bad, check for a carousel
+                if isinstance(carousel_links, list) and len(carousel_links) > 0:
+                    # --- THIS IS THE FIX ---
+                    # Store the *entire list* as a JSON string
+                    image_link_to_save = json.dumps(carousel_links)
+                    # --- END OF FIX ---
+                else:
+                    # If no image_link and no carousel, set to None
+                    image_link_to_save = None
+            # --- End of new logic ---
+
+            # --- FIX 2: Removed fields that are not in your SQL table ---
+            # (goal, theme, text_content, revision, feedback)
+            
             # --- FIX 3: Explicitly generate and send BOTH 'id' (UUID) and 'post_id' (text) ---
             new_uuid = str(uuid.uuid4()) # Generate a new UUID for the primary key
 
             new_rows.append({
-                "id": new_uuid,     
-                "post_id": post_id,
+                "id": new_uuid,     # <--- Explicitly sending the new UUID
+                "post_id": post_id, # <--- Sending the original text ID
                 "parent_calendar_id": calendar_id,
                 "user_id": row.get("user_id"),
                 "platform": row.get("platform"),
                 "status": item.get("status"),
+                # "goal": item.get("goal"), <-- This column is missing from your table
+                # "theme": item.get("theme"), <-- This column is missing from your table
                 "content_type": item.get("content_type"),
-                "image_link": item.get("image_link"),
-                "scheduled_datetime": scheduled_str,
+                # "text_content": item.get("text_content"), <-- This column is missing from your table
+                "image_link": image_link_to_save, # <--- Use the new variable
+                "scheduled_datetime": scheduled_str, # Use the original string
                 "storage_path": item.get("storage_path"),
+                # "revision": item.get("revision"), <-- This column is missing from your table
+                # "feedback": item.get("feedback"), <-- This column is missing from your table
                 "original_json": item,
+                # --- Added new fields ---
                 "month": month,
                 "year": year,
             })
