@@ -19,6 +19,10 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 
+# Defaults to "True". Set to "False" in .env to disable auth for testing.
+AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "True").lower() == 'true'
+# --- End of New Flag ---
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not SUPABASE_ANON_KEY:
     raise EnvironmentError("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_ANON_KEY must be set in .env")
 
@@ -27,9 +31,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-# --- *** FIX 1: DYNAMIC CORS FROM .env FILE *** ---
-# Reverting to the flexible .env file method.
-# Defaults to localhost:8080 (for dev) and your deployed app URL.
+#  FIX 1: DYNAMIC CORS FROM .env FILE
 default_origins = "http://localhost:8080,https://app.digibility.ai"
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", default_origins).split(',')
 log.info(f"Allowing origins: {CORS_ORIGINS}")
@@ -57,6 +59,19 @@ def is_valid_uuid(val):
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        
+        # --- NEW: Check if auth is enabled ---
+        if not AUTH_ENABLED:
+            log.warning("!!! AUTHENTICATION IS DISABLED !!!")
+            log.warning("Bypassing token check and using ADMIN privileges for this request.")
+            # Set up a default admin context so the app doesn't crash
+            g.current_user_id = "auth-disabled-admin"
+            g.current_user_role = "admin"
+            g.supabase_client = admin_supabase
+            return f(*args, **kwargs)
+        # --- End of New Check ---
+
+        # If auth is enabled, run the normal token check
         authorization = request.headers.get("Authorization")
         if authorization is None:
             return jsonify({"error": "Authorization header is missing"}), 401
@@ -98,15 +113,9 @@ def token_required(f):
                 # Users get a new client authenticated as themselves (respects RLS)
                 log.info("Using USER client (respects RLS).")
                 
-                # 1. Create a client with the ANON key
-                user_supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-                
-                # 2. Correct v2 Syntax: Apply the user's token to the 'postgrest' client
-                user_supabase.postgrest.auth(token)
-                
-                # 3. Attach this RLS-aware client to the request
+                user_supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)                
+                user_supabase.postgrest.auth(token)                
                 g.supabase_client = user_supabase
-                # --- END OF FIX ---
         
         except AuthApiError as e:
             log.error(f"Supabase AuthApiError: {e.message}")
@@ -206,7 +215,7 @@ def process_approved_posts():
         content_items = calendar_json.get("content_items", [])
 
         # 2. Filter approved posts
-        approved_posts = [item for item in content_items if item.get("status") == "ApprovedCalendar"]
+        approved_posts = [post for post in content_items if post.get("status") == "ApprovedCalendar"]
         if not approved_posts:
             log.info(f"No approved posts found for calendar {calendar_id}.")
             return jsonify({"message": "No approved posts to process."}), 200
@@ -215,14 +224,14 @@ def process_approved_posts():
 
         # 3. Prepare rows for insert
         new_rows = []
-        for item in approved_posts:
-            post_id = item.get("id")
+        for post in approved_posts:
+            post_id = post.get("id")
             
             if not post_id:
-                log.warning(f"Missing ID in item. Skipping item. Original item: {item}")
+                log.warning(f"Missing ID in post. Skipping post. Original post: {post}")
                 continue 
 
-            scheduled_str = item.get("scheduled_datetime")
+            scheduled_str = post.get("scheduled_datetime")
             month = None
             year = None
 
@@ -232,14 +241,14 @@ def process_approved_posts():
                     month = dt.strftime("%B") 
                     year = dt.year          
                 except (ValueError, TypeError) as e:
-                    log.warning(f"Could not parse scheduled_datetime: {scheduled_str} for item {post_id}. Error: {e}")
+                    log.warning(f"Could not parse scheduled_datetime: {scheduled_str} for post {post_id}. Error: {e}")
             else:
-                log.warning(f"Missing scheduled_datetime for item {post_id}")
+                log.warning(f"Missing scheduled_datetime for post {post_id}")
 
-            image_link_to_save = item.get("image_link") 
+            image_link_to_save = post.get("image_link") 
             
             if not image_link_to_save or not isinstance(image_link_to_save, str):
-                carousel_links = item.get("carousel")
+                carousel_links = post.get("carousel")
                 if isinstance(carousel_links, list) and len(carousel_links) > 0:
                     image_link_to_save = json.dumps(carousel_links)
                 else:
@@ -253,12 +262,12 @@ def process_approved_posts():
                 "parent_calendar_id": calendar_id,
                 "user_id": row.get("user_id"), # This is the original owner's ID
                 "platform": row.get("platform"),
-                "status": item.get("status"),
-                "content_type": item.get("content_type"),
+                "status": post.get("status"),
+                "content_type": post.get("content_type"),
                 "image_link": image_link_to_save, 
                 "scheduled_datetime": scheduled_str, 
-                "storage_path": item.get("storage_path"),
-                "original_json": item,
+                "storage_path": post.get("storage_path"),
+                "original_json": post,
                 "month": month,
                 "year": year,
             })
