@@ -1,5 +1,8 @@
-fastapi>=0.95.0
-uvicorn>=0.22.0
+Flask==2.0.1
+flask-cors==3.0.10
 supabase>=1.0.0
 python-dotenv>=1.0.0
 pydantic>=1.10.0
+tenacity==8.2.2
+httpx==0.24.1
+python-dateutil==2.8.2
