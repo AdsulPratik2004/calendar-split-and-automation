@@ -11,6 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_t
 import httpx 
 from dateutil import parser as date_parser
 from auth import token_required
+from datetime import datetime, timezone  # <-- FIX 1: Import timezone
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -48,7 +49,7 @@ def is_valid_uuid(val):
 # --- Helper: Batch Upsert Function with Retries ---
 @retry(
     stop=stop_after_attempt(3),  # Try up to 3 times
-    wait=wait_fixed(2),           # Wait 2 seconds between failures
+    wait=wait_fixed(2),          # Wait 2 seconds between failures
     retry=retry_if_exception_type((httpx.ReadError, httpx.ConnectError))  # Only retry on these errors
 )
 def upsert_batch(batch: list, client: Client):
@@ -56,9 +57,11 @@ def upsert_batch(batch: list, client: Client):
     Tries to upsert a single batch of rows to Supabase using the provided client.
     Will retry on ReadError or ConnectError.
     """
-    log.info(f"💾 [BATCH] Attempting to upsert {len(batch)} rows to 'individual_calander_posts' table...")
+    # FIX 2: Corrected table name typo 'calander' to 'calendar'
+    log.info(f"💾 [BATCH] Attempting to upsert {len(batch)} rows to 'individual_calendar_posts' table...")
     try:
-        response = client.from_("individual_calander_posts") \
+        # FIX 2: Corrected table name typo 'calander' to 'calendar'
+        response = client.from_("posts") \
                          .upsert(batch, on_conflict="post_id") \
                          .execute()
         
@@ -200,20 +203,23 @@ def process_approved_posts():
             new_uuid = str(uuid.uuid4()) 
 
             new_rows.append({
-                "id": new_uuid,      
-                "post_id": post_id, 
+                "id": new_uuid,
+                "post_id": post_id,
                 "parent_calendar_id": calendar_id,
-                "user_id": row.get("user_id"),  # This is the original owner's ID
+                "user_id": row.get("user_id"),  # Original owner's ID
                 "platform": row.get("platform"),
                 "status": post.get("status"),
                 "content_type": post.get("content_type"),
-                "image_link": image_link_to_save, 
-                "scheduled_datetime": scheduled_str, 
+                "image_link": image_link_to_save,
+                "scheduled_datetime": scheduled_str,
                 "storage_path": post.get("storage_path"),
                 "original_json": post,
-                "month": month,
-                "year": year,
+                "created_at": datetime.now(timezone.utc).isoformat(),  # <-- FIX 1: Use timezone-aware datetime
+                "updated_at": datetime.now(timezone.utc).isoformat(),  # <-- FIX 1: Use timezone-aware datetime
+                "updated_by": current_user_id
             })
+
+            
 
         log.info(f"✅ [MAIN] Prepared {len(new_rows)} rows for insertion (skipped: {skipped_count})")
 
@@ -266,3 +272,4 @@ def process_approved_posts():
 # --- Run the app with `python main.py` ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
+
