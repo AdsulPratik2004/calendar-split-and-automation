@@ -208,7 +208,7 @@ def process_approved_posts():
                 "parent_calendar_id": calendar_id,
                 "user_id": row.get("user_id"),  # Original owner's ID
                 "platform": row.get("platform"),
-                "status": post.get("status"),
+                "status": "PendingApprovalCalendar", # post.get("status") this is for storing as it is status 
                 "content_type": post.get("content_type"),
                 "image_link": image_link_to_save,
                 "scheduled_datetime": scheduled_str,
