@@ -155,7 +155,7 @@ def process_approved_posts():
 
         # 2. Filter approved posts
         log.info(f"🔍 [MAIN] Step 3: Filtering approved posts...")
-        approved_posts = [post for post in content_items if post.get("status") == "ApprovedCalendar"]
+        approved_posts = [post for post in content_items if post.get("status") == "approved"]
         if not approved_posts:
             log.info(f"ℹ️  [MAIN] No approved posts found for calendar {calendar_id}")
             return jsonify({"message": "No approved posts to process."}), 200
@@ -201,6 +201,8 @@ def process_approved_posts():
                     log.warning(f"⚠️  [MAIN] Post #{idx} ({post_id}): No image_link or carousel found")
 
             new_uuid = str(uuid.uuid4()) 
+            post['status'] = 'content_in_progress'
+            log.debug(f"📝 [MAIN] Post #{idx} ({post_id}): Internal JSON status set to 'content_in_progress'")
 
             new_rows.append({
                 "id": new_uuid,
@@ -208,7 +210,7 @@ def process_approved_posts():
                 "parent_calendar_id": calendar_id,
                 "user_id": row.get("user_id"),  # Original owner's ID
                 "platform": row.get("platform"),
-                "status": "PendingApprovalCalendar", # post.get("status") this is for storing as it is status 
+                "status": "content_in_progress", # post.get("status") this is for storing as it is status 
                 "content_type": post.get("content_type"),
                 "image_link": image_link_to_save,
                 "scheduled_datetime": scheduled_str,
