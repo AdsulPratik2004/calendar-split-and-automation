@@ -3,7 +3,6 @@ import logging
 from functools import wraps
 from flask import request, jsonify, g
 from supabase import create_client, Client
-from gotrue.errors import AuthApiError
 from dotenv import load_dotenv
 
 # --- Load Environment Variables ---
@@ -130,12 +129,11 @@ def token_required(f):
             log.info("✅ [AUTH] ===== Authentication Successful =====")
             log.info(f"✅ [AUTH] User: {g.current_user_id}, Role: {g.current_user_role}, Client: {'ADMIN' if current_user_role == 'admin' else 'USER (RLS)'}")
 
-        except AuthApiError as e:
-            log.error(f"❌ [AUTH] Supabase AuthApiError: {e.message}")
-            return jsonify({"error": f"Authentication failed: {e.message}"}), 401
         except Exception as e:
-            log.error(f"❌ [AUTH] Error during user authentication: {e}")
-            return jsonify({"error": f"Authentication failed: {str(e)}"}), 401
+            # Check if exception has a message attribute, otherwise use str(e)
+            error_message = getattr(e, 'message', str(e))
+            log.error(f"❌ [AUTH] Error during user authentication: {error_message}")
+            return jsonify({"error": f"Authentication failed: {error_message}"}), 401
 
         # --- 5. Continue to the protected route ---
         log.info("➡️  [AUTH] Proceeding to protected route handler...")
